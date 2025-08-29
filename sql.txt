@@ -1,0 +1,41 @@
+-- Devices: كل جهاز ESP32 عنده سطر وتعريف
+create table if not exists public.devices (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  token text unique not null,         -- توكن سري للجهاز
+  created_at timestamptz default now()
+);
+
+-- Events: أي حدث من الجهاز (باب، حركة، إلخ)
+create table if not exists public.events (
+  id bigserial primary key,
+  device_id uuid references public.devices(id) on delete cascade,
+  event_type text not null,           -- e.g. "door_open", "door_close", "motion_alert", "mode_changed"
+  payload jsonb default '{}'::jsonb,  -- تفاصيل إضافية
+  created_at timestamptz default now()
+);
+
+-- Mode logs: علشان تغييرات Security Mode
+create table if not exists public.mode_logs (
+  id bigserial primary key,
+  device_id uuid references public.devices(id) on delete cascade,
+  mode text not null check (mode in ('normal','security')),
+  created_by text default 'device',   -- or 'web'
+  created_at timestamptz default now()
+);
+
+-- افتراضيًا شغّل RLS على الجداول
+alter table public.devices enable row level security;
+alter table public.events enable row level security;
+alter table public.mode_logs enable row level security;
+
+-- سياسات للقراءة من لوحة تحكم (لو هتعمل Web Dashboard لاحقًا)
+-- القراءة مفتوحة مؤقتًا (تقدر تقيدها لاحقًا)
+create policy "read_public_events" on public.events
+for select using (true);
+
+create policy "read_public_mode_logs" on public.mode_logs
+for select using (true);
+
+create policy "read_public_devices" on public.devices
+for select using (true);
