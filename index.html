@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Smart Home Control</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+<style>
+body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; margin:0; padding:0;}
+h1 { color: #333; }
+.box {
+  background: white;
+  padding: 20px;
+  margin: 50px auto;
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  width: 380px;
+  display: none;
+}
+input { width: 90%; padding: 10px; margin: 8px 0; border-radius: 6px; border: 1px solid #ccc; }
+.btn {
+  padding: 12px 20px;
+  margin: 8px;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: #007BFF;
+  color: white;
+  width: 90%;
+}
+.btn:hover { background: #0056b3; }
+.link { color: #007BFF; cursor: pointer; font-size: 14px; display: block; margin-top: 10px; }
+.link:hover { text-decoration: underline; }
+#log, #chat-log {
+  width: 90%;
+  margin: 10px auto;
+  background: #fff;
+  padding: 10px;
+  border: 1px solid #ccc;
+  height: 150px;
+  overflow-y: scroll;
+  text-align: left;
+  font-size: 14px;
+  border-radius: 6px;
+}
+#chat-log { background: #eee; }
+</style>
+</head>
+<body>
+
+<!-- Home -->
+<div class="box" id="home-box" style="display:block;">
+  <h1>🏠 Smart Home</h1>
+  <p>Welcome to your smart home system.</p>
+  <button class="btn" onclick="showPage('login-box')">🔐 Login</button>
+  <button class="btn" onclick="showPage('signup-box')">📝 Sign Up</button>
+</div>
+
+<!-- Login -->
+<div class="box" id="login-box">
+  <h1>🔐 Login</h1>
+  <input type="text" id="login-username" placeholder="👤 Username"><br>
+  <input type="password" id="login-password" placeholder="🔑 Password"><br>
+  <button class="btn" onclick="login()">Login</button>
+  <p id="login-error" style="color:red; display:none;">❌ Wrong username or password</p>
+  <span class="link" onclick="showPage('signup-box')">Create account</span>
+  <span class="link" onclick="showPage('home-box')">⬅ Back</span>
+</div>
+
+<!-- Signup -->
+<div class="box" id="signup-box">
+  <h1>📝 Sign Up</h1>
+  <input type="text" id="signup-username" placeholder="👤 Choose username"><br>
+  <input type="password" id="signup-password" placeholder="🔑 Choose password"><br>
+  <button class="btn" onclick="signup()">Sign Up</button>
+  <p id="signup-error" style="color:red; display:none;"></p>
+  <p id="signup-success" style="color:green; display:none;"></p>
+  <span class="link" onclick="showPage('login-box')">Already have an account?</span>
+  <span class="link" onclick="showPage('home-box')">⬅ Back</span>
+</div>
+
+<!-- Dashboard -->
+<div class="box" id="dashboard-box">
+  <h1>📊 Dashboard</h1>
+  <button class="btn" onclick="sendMessage('LED_ON')">💡 LED ON</button>
+  <button class="btn" onclick="sendMessage('LED_OFF')">💡 LED OFF</button>
+  <button class="btn" onclick="sendMessage('AUTO_LED')">♻ AUTO LED</button>
+  <br>
+  <button class="btn" onclick="sendMessage('DOOR_OPEN')">🚪 Door Open</button>
+  <button class="btn" onclick="sendMessage('DOOR_CLOSE')">🚪 Door Close</button>
+  <br>
+  <button class="btn" onclick="sendMessage('SECURITY_ON')">🔒 Security ON</button>
+  <button class="btn" onclick="sendMessage('SECURITY_OFF')">🔓 Security OFF</button>
+
+  <h3>📩 System Messages</h3>
+  <div id="log"></div>
+
+  <span class="link" onclick="showPage('profile-box')">👤 Profile</span>
+  <span class="link" onclick="showPage('chatbot-box')">💬 Open Chat Bot</span>
+</div>
+
+<!-- Profile -->
+<div class="box" id="profile-box">
+  <h1>👤 Profile</h1>
+  <p><b>Username:</b> <span id="profile-username"></span></p>
+  <button class="btn" style="background:#dc3545;" onclick="logout()">🚪 Logout</button>
+  <span class="link" onclick="showPage('dashboard-box')">⬅ Back to Dashboard</span>
+</div>
+
+<!-- Chatbot Box -->
+<div class="box" id="chatbot-box">
+  <h1>🤖 Chat Bot</h1>
+  <div id="chat-log"></div>
+  <input type="text" id="chat-input" placeholder="Type your message...">
+  <button class="btn" onclick="sendChatMessage()">Send</button>
+  <span class="link" onclick="showPage('dashboard-box')">⬅ Back to Dashboard</span>
+</div>
+
+<script>
+const SUPABASE_URL = "https://xrmgfnesrrqqdtbaljti.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhybWdmbmVzcnJxcWR0YmFsanRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxNjIzOTYsImV4cCI6MjA3MTczODM5Nn0.UZX0NG_Epx06cSbUR2fc0mjcOBpCFGAKRMCwBZEDpVU";
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function showPage(id) {
+  document.querySelectorAll(".box").forEach(b => b.style.display = "none");
+  document.getElementById(id).style.display = "block";
+  if(id === "profile-box") {
+    document.getElementById("profile-username").innerText = localStorage.getItem("username") || "Guest";
+  }
+}
+
+async function signup() {
+  const user = document.getElementById("signup-username").value.trim();
+  const pass = document.getElementById("signup-password").value.trim();
+  document.getElementById("signup-error").style.display = "none";
+  document.getElementById("signup-success").style.display = "none";
+
+  if (!user || !pass) {
+    document.getElementById("signup-error").innerText = "⚠ Please fill all fields";
+    document.getElementById("signup-error").style.display = "block";
+    return;
+  }
+
+  const { data: exists } = await supabaseClient
+    .from("users")
+    .select("id")
+    .eq("username", user)
+    .maybeSingle();
+
+  if (exists) {
+    document.getElementById("signup-error").innerText = "⚠ Username already taken";
+    document.getElementById("signup-error").style.display = "block";
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from("users")
+    .insert([{ username: user, password: pass }]);
+
+  if (error) {
+    document.getElementById("signup-error").innerText = "❌ Database error";
+    document.getElementById("signup-error").style.display = "block";
+    return;
+  }
+
+  document.getElementById("signup-success").innerText = "✅ Account created! Please login.";
+  document.getElementById("signup-success").style.display = "block";
+  setTimeout(() => showPage("login-box"), 2000);
+}
+
+async function login() {
+  const user = document.getElementById("login-username").value.trim();
+  const pass = document.getElementById("login-password").value.trim();
+
+  const { data, error } = await supabaseClient
+    .from("users")
+    .select("*")
+    .eq("username", user)
+    .eq("password", pass)
+    .maybeSingle();
+
+  if (data && !error) {
+    localStorage.setItem("username", user);
+    showPage("dashboard-box");
+    connectMQTT();
+    await logAccess("login", data.id); // يظل يسجل في الباك إند
+  } else {
+    console.error(error);
+    document.getElementById("login-error").style.display = "block";
+  }
+}
+
+async function logout() {
+  const username = localStorage.getItem("username");
+  if (username) {
+    const { data: user } = await supabaseClient
+      .from("users")
+      .select("id")
+      .eq("username", username)
+      .maybeSingle();
+    if(user) await logAccess("logout", user.id); // يظل يسجل في الباك إند
+  }
+  localStorage.removeItem("username");
+  showPage("home-box");
+}
+
+async function logAccess(action, user_id) {
+  const { error } = await supabaseClient
+    .from("access_logs")
+    .insert([{ user_id, action }]);
+  if(error) console.error("Access Log Error:", error);
+}
+
+// --- MQTT HiveMQ ---
+let client;
+function connectMQTT() {
+  const broker = "wss://b69ee0c9344646f691ec2fd02eb973e2.s1.eu.hivemq.cloud:8884/mqtt";
+  const options = {
+    username: "hivemq.webclient.1754122344657",
+    password: "79>#taA$!0XDCbMm3Lsp",
+    clean: true,
+    connectTimeout: 4000,
+    clientId: "webClient-" + Math.random().toString(16).substr(2, 8)
+  };
+  client = mqtt.connect(broker, options);
+
+  client.on("connect", () => {
+    logMessage("✅ Connected to HiveMQ");
+    client.subscribe("student/momen/publish");
+  });
+
+  client.on("message", (topic, message) => {
+    logMessage("[" + topic + "]: " + message.toString());
+  });
+}
+
+function sendMessage(msg) {
+  if(client && client.connected){
+    client.publish("student/momen/subscribe", msg);
+    logMessage("📤 Sent: " + msg);
+  }
+}
+
+function logMessage(msg) {
+  const log = document.getElementById("log");
+  log.innerHTML += msg + "<br>";
+  log.scrollTop = log.scrollHeight;
+}
+
+// --- Local Chatbot ---
+function sendChatMessage() {
+  const input = document.getElementById("chat-input");
+  const message = input.value.trim();
+  if(!message) return;
+
+  addChatMessage("You", message);
+
+  let reply = "Sorry, I didn't understand that.";
+  const msgLower = message.toLowerCase();
+  if(msgLower.includes("hello") || msgLower.includes("hi")) reply = "Hello! How can I help you today?";
+  else if(msgLower.includes("led on")) { reply = "Turning LED on. ✅"; sendMessage("LED_ON"); }
+  else if(msgLower.includes("led off")) { reply = "Turning LED off. ✅"; sendMessage("LED_OFF"); }
+  else if(msgLower.includes("door open")) { reply = "Opening door. 🚪"; sendMessage("DOOR_OPEN"); }
+  else if(msgLower.includes("door close")) { reply = "Closing door. 🚪"; sendMessage("DOOR_CLOSE"); }
+  else if(msgLower.includes("security on")) { reply = "Security ON. 🔒"; sendMessage("SECURITY_ON"); }
+  else if(msgLower.includes("security off")) { reply = "Security OFF. 🔓"; sendMessage("SECURITY_OFF"); }
+
+  setTimeout(() => addChatMessage("Bot", reply), 500);
+  input.value = "";
+  input.focus();
+}
+
+function addChatMessage(sender, msg) {
+  const log = document.getElementById("chat-log");
+  log.innerHTML += `<b>${sender}:</b> ${msg}<br>`;
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+</body>
+</html>
